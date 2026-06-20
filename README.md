@@ -30,11 +30,15 @@ Netflix Shows dataset, Kaggle (shivamb/netflix-shows). Contains show metadata in
 
 ## The Data Quality Issue
 
-The most useful part of this build wasn't the pipeline itself, it was a data quality bug surfaced during aggregation.
+The most useful part of this build wasn't the pipeline itself, it was a data quality issue that only showed up under PySpark's parser, not the source file itself.
+Grouping by release_year produced obviously invalid values: actor names, runtime strings like "40 min", and full date strings like "August 13, 2020" appeared alongside genuine years, with the shift visible across adjacent fields too (one row's show_id even showed a fragment of a movie title).
 
-Grouping by `release_year` produced obviously invalid values: actor names, runtime strings like `"40 min"`, and full date strings like `"August 13, 2020"` appeared alongside genuine years. Root cause: unescaped commas inside free-text fields (likely `cast` or `description`) shifted column alignment for a subset of rows during the original CSV export, a classic real-world ETL failure mode that's easy to miss without explicit validation.
+Loading the identical file with pandas produces zero malformed rows, every release_year value comes back as a clean 4-digit number. The cause is specific to PySpark's default CSV parser: certain quoted, comma-containing fields are parsed differently by Spark's reader than by pandas', causing the shift for a small subset of rows (20 out of 8,809).
 
-**Fix:** added a regex-based validation filter requiring `release_year` to match exactly four digits before aggregation, with a row count delta logged to quantify how many records were affected.
+This is a useful distinction in practice: the same file can pass validation cleanly under one tool's parser and fail under another's, which is exactly why explicit schema and value validation belongs in the pipeline itself, rather than trusting that "the file looked fine elsewhere" is enough.
+
+Fix: added a regex-based validation filter requiring release_year to match exactly four digits before aggregation, with a row count delta logged to quantify how many records were affected.
+
 
 ```python
 before_count = df.count()
